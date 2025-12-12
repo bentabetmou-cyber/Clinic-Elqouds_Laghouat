@@ -1,0 +1,444 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  Activity, Users, DollarSign, Wallet, Settings, Calendar, 
+  Printer, UserPlus, Save, Trash2, Lock, LogIn,
+  FolderClock, Upload, Image as ImageIcon, X, ShieldCheck, LogOut,
+  AlertTriangle, Clock
+} from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, 
+  signInWithCustomToken, 
+  signInAnonymously, 
+  onAuthStateChanged 
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  doc, 
+  setDoc, 
+  collection, 
+  onSnapshot, 
+  query, 
+  orderBy, 
+  addDoc, 
+  deleteDoc 
+} from 'firebase/firestore';
+
+// --- Firebase Config ---
+const firebaseConfig = JSON.parse(__firebase_config);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+// --- مكون شاشة تسجيل الدخول (مع نظام الحماية) ---
+const LoginScreen = ({ onLogin }) => {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  
+  // حالة القفل
+  const [isLocked, setIsLocked] = useState(false);
+  const [attempts, setAttempts] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(0);
+
+  // التحقق من القفل عند فتح الصفحة
+  useEffect(() => {
+    const lockTime = localStorage.getItem('login_lock_until');
+    const storedAttempts = localStorage.getItem('login_attempts');
+    
+    if (storedAttempts) setAttempts(parseInt(storedAttempts));
+
+    if (lockTime) {
+      const remaining = parseInt(lockTime) - Date.now();
+      if (remaining > 0) {
+        setIsLocked(true);
+        startTimer(remaining);
+      } else {
+        // انتهى وقت القفل
+        localStorage.removeItem('login_lock_until');
+        localStorage.setItem('login_attempts', '0');
+        setAttempts(0);
+        setIsLocked(false);
+      }
+    }
+  }, []);
+
+  const startTimer = (duration) => {
+    setTimeLeft(Math.ceil(duration / 1000));
+    const timer = setInterval(() => {
+      const lockTime = localStorage.getItem('login_lock_until');
+      const remaining = parseInt(lockTime) - Date.now();
+      
+      if (remaining <= 0) {
+        clearInterval(timer);
+        setIsLocked(false);
+        setAttempts(0);
+        localStorage.removeItem('login_lock_until');
+        localStorage.setItem('login_attempts', '0');
+      } else {
+        setTimeLeft(Math.ceil(remaining / 1000));
+      }
+    }, 1000);
+  };
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    if (isLocked) return;
+
+    setLoading(true);
+    setError('');
+
+    setTimeout(() => {
+      // التحقق من البيانات
+      if (username.toLowerCase() === 'clinicqds2025' && password === 'qdsqds2025') {
+        // نجاح الدخول
+        localStorage.setItem('login_attempts', '0');
+        onLogin(username);
+      } else {
+        // فشل الدخول
+        const newAttempts = attempts + 1;
+        setAttempts(newAttempts);
+        localStorage.setItem('login_attempts', newAttempts.toString());
+
+        if (newAttempts >= 3) {
+          // تفعيل القفل لمدة 10 دقائق
+          const lockUntil = Date.now() + (10 * 60 * 1000); // 10 Minutes
+          localStorage.setItem('login_lock_until', lockUntil.toString());
+          setIsLocked(true);
+          startTimer(10 * 60 * 1000);
+          setError('تم تجاوز عدد المحاولات المسموح بها.');
+        } else {
+          setError(`بيانات خاطئة. متبقي ${3 - newAttempts} محاولات.`);
+        }
+        setLoading(false);
+      }
+    }, 800);
+  };
+
+  // تنسيق الوقت المتبقي
+  const formatTime = (seconds) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  return (
+    <div className="min-h-screen bg-[#0f1115] flex items-center justify-center p-4 relative overflow-hidden font-sans" dir="ltr">
+      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-yellow-600/10 rounded-full blur-[100px]"></div>
+      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-600/10 rounded-full blur-[100px]"></div>
+
+      <div className="w-full max-w-md bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-3xl p-8 shadow-2xl relative z-10">
+        <div className="flex flex-col items-center mb-8">
+          <div className="w-20 h-20 rounded-full bg-gradient-to-br from-yellow-500 to-yellow-700 flex items-center justify-center shadow-lg shadow-yellow-500/20 mb-4">
+             <Activity className="text-white w-10 h-10" />
+          </div>
+          <h1 className="text-2xl font-bold text-white mb-1">Clinique Al-Quds</h1>
+          <p className="text-yellow-500 text-xs tracking-widest uppercase">Chirurgie Dentaire</p>
+        </div>
+
+        {isLocked ? (
+          <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-6 text-center animate-pulse">
+            <Lock className="w-12 h-12 text-red-500 mx-auto mb-3" />
+            <h3 className="text-red-400 font-bold text-lg mb-2">Accès Bloqué</h3>
+            <p className="text-slate-400 text-sm mb-4">Trop de tentatives échouées.</p>
+            <div className="text-2xl font-mono text-white bg-slate-900 py-2 rounded-lg border border-slate-700">
+              {formatTime(timeLeft)}
+            </div>
+            <p className="text-xs text-slate-500 mt-2">Veuillez patienter 10 minutes</p>
+          </div>
+        ) : (
+          <form onSubmit={handleLogin} className="space-y-5">
+            <div>
+              <label className="block text-xs font-bold text-slate-400 mb-2 ml-1">Nom d'utilisateur</label>
+              <div className="relative">
+                <input 
+                  type="text" 
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full bg-slate-900/80 border border-slate-600 rounded-xl px-10 py-3.5 text-white focus:border-yellow-500 transition-all outline-none"
+                  placeholder="Utilisateur"
+                />
+                <Users className="absolute left-3.5 top-3.5 text-slate-500 w-5 h-5" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-400 mb-2 ml-1">Mot de passe</label>
+              <div className="relative">
+                <input 
+                  type="password" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-slate-900/80 border border-slate-600 rounded-xl px-10 py-3.5 text-white focus:border-yellow-500 transition-all outline-none"
+                  placeholder="••••••••"
+                />
+                <Lock className="absolute left-3.5 top-3.5 text-slate-500 w-5 h-5" />
+              </div>
+            </div>
+
+            {error && (
+              <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs p-3 rounded-lg text-center font-bold flex items-center justify-center gap-2">
+                <AlertTriangle className="w-4 h-4" />
+                {error}
+              </div>
+            )}
+
+            <button 
+              type="submit" 
+              disabled={loading}
+              className="w-full bg-gradient-to-r from-yellow-600 to-yellow-500 hover:from-yellow-500 hover:to-yellow-400 text-slate-900 font-bold py-4 rounded-xl shadow-lg shadow-yellow-500/20 transition-all active:scale-[0.98] flex justify-center items-center gap-2 disabled:opacity-70"
+            >
+              {loading ? <span className="animate-spin">⌛</span> : <LogIn className="w-5 h-5" />}
+              <span>Se Connecter</span>
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// --- التطبيق الرئيسي ---
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [appUser, setAppUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  // البيانات
+  const [patients, setPatients] = useState([]);
+  const [archives, setArchives] = useState([]);
+  const [config, setConfig] = useState({
+    docPercent: 34,
+    doctorName: '',
+    nurseFixed: 2000,
+    nurseName: '',
+    shift: 'Matin',
+    customLogo: null,
+    customBg: null
+  });
+
+  const [newPatient, setNewPatient] = useState({ firstName: '', lastName: '', amount: '' });
+  const [isArchiveOpen, setIsArchiveOpen] = useState(false);
+
+  // Auth
+  useEffect(() => {
+    const initAuth = async () => {
+      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        await signInWithCustomToken(auth, __initial_auth_token);
+      } else {
+        await signInAnonymously(auth);
+      }
+    };
+    initAuth();
+    
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      const savedUser = sessionStorage.getItem('clinic_session_user');
+      if (savedUser) setAppUser(savedUser);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Data Sync
+  useEffect(() => {
+    if (!user) return;
+
+    // Load Data
+    const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'clinicState', 'current');
+    const unsub = onSnapshot(docRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if(data.patients) setPatients(data.patients);
+        if(data.config) setConfig(prev => ({...prev, ...data.config}));
+      }
+    });
+
+    // Load Archives
+    const archiveRef = collection(db, 'artifacts', appId, 'users', user.uid, 'archives');
+    const q = query(archiveRef, orderBy('id', 'desc'));
+    const unsubArchive = onSnapshot(q, (snap) => {
+       setArchives(snap.docs.map(d => ({ fireId: d.id, ...d.data() })));
+    });
+
+    return () => { unsub(); unsubArchive(); };
+  }, [user]);
+
+  // Logic
+  const saveToCloud = async (newPatients, newConfig) => {
+    if (!user) return;
+    const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'clinicState', 'current');
+    await setDoc(docRef, {
+      patients: newPatients !== undefined ? newPatients : patients,
+      config: newConfig !== undefined ? newConfig : config,
+      lastUpdated: new Date().toISOString()
+    }, { merge: true });
+  };
+
+  const handleAppLogin = (username) => {
+    setAppUser(username);
+    sessionStorage.setItem('clinic_session_user', username);
+  };
+
+  const handleLogout = () => {
+    setAppUser(null);
+    sessionStorage.removeItem('clinic_session_user');
+  };
+
+  const handleAddPatient = (e) => {
+    e.preventDefault();
+    if (!newPatient.firstName || !newPatient.lastName || !newPatient.amount) return;
+
+    const entry = {
+      id: Date.now(),
+      time: new Date().toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'}),
+      firstName: newPatient.firstName,
+      lastName: newPatient.lastName,
+      amount: Number(newPatient.amount)
+    };
+    
+    const updated = [entry, ...patients];
+    setPatients(updated);
+    setNewPatient({ firstName: '', lastName: '', amount: '' });
+    saveToCloud(updated, undefined);
+  };
+
+  const handleDeletePatient = (id) => {
+    if(confirm('Supprimer ce patient ?')) {
+      const updated = patients.filter(p => p.id !== id);
+      setPatients(updated);
+      saveToCloud(updated, undefined);
+    }
+  };
+
+  const handleArchive = async () => {
+    if(patients.length === 0) return alert('Liste vide!');
+    if(!confirm('Archiver la session actuelle ?')) return;
+
+    const stats = calculateStats();
+    const record = {
+      id: Date.now(),
+      date: new Date().toLocaleDateString('fr-FR'),
+      shift: config.shift,
+      doctorName: config.doctorName,
+      nurseName: config.nurseName,
+      stats,
+      patients
+    };
+
+    await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'archives'), record);
+    setPatients([]);
+    saveToCloud([], undefined);
+  };
+
+  const calculateStats = () => {
+    const total = patients.reduce((sum, p) => sum + p.amount, 0);
+    const docShare = Math.round((total * (config.docPercent / 100)) / 1000) * 1000;
+    const nurseShare = config.nurseFixed;
+    const net = total - docShare - nurseShare;
+    return { total, docShare, nurseShare, net };
+  };
+
+  const stats = calculateStats();
+
+  const handleImageUpload = (e, type) => {
+    const file = e.target.files[0];
+    if(file) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const base64 = ev.target.result;
+        const newConfig = { ...config, [type]: base64 };
+        setConfig(newConfig);
+        localStorage.setItem(`clinic_${type}`, base64);
+        saveToCloud(undefined, newConfig);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  useEffect(() => {
+    const localLogo = localStorage.getItem('clinic_customLogo');
+    const localBg = localStorage.getItem('clinic_customBg');
+    if(localLogo || localBg) {
+      setConfig(prev => ({
+        ...prev,
+        customLogo: localLogo || prev.customLogo,
+        customBg: localBg || prev.customBg
+      }));
+    }
+  }, []);
+
+  if (loading) return <div className="h-screen bg-[#0f1115] flex items-center justify-center text-yellow-500">Chargement...</div>;
+  if (!appUser) return <LoginScreen onLogin={handleAppLogin} />;
+
+  return (
+    <div 
+      className="min-h-screen font-sans text-slate-200 pb-10 bg-fixed bg-cover bg-center"
+      dir="ltr"
+      style={{ 
+        backgroundImage: config.customBg ? `url(${config.customBg})` : 'none',
+        backgroundColor: config.customBg ? 'transparent' : '#0f1115'
+      }}
+    >
+      {config.customBg && <div className="fixed inset-0 bg-[#0f1115]/85 pointer-events-none z-[-1]" />}
+
+      <header className="border-b border-slate-700/50 bg-[#0f1115]/80 backdrop-blur-md sticky top-0 z-40 print:hidden shadow-lg">
+        <div className="max-w-7xl mx-auto px-4 h-20 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-yellow-600 to-yellow-400 flex items-center justify-center shadow-lg shadow-yellow-500/20 overflow-hidden bg-white">
+              {config.customLogo ? <img src={config.customLogo} className="w-full h-full object-cover" /> : <Activity className="text-slate-900 w-8 h-8" />}
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-slate-100">Clinique Al-Quds</h1>
+              <p className="text-xs text-yellow-500 font-bold uppercase">Chirurgie Dentaire</p>
+            </div>
+          </div>
+          <div className="flex gap-3">
+             <button onClick={() => setIsArchiveOpen(true)} className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-lg text-sm transition-all border border-slate-700"><FolderClock className="w-4 h-4 text-yellow-500" /><span className="hidden md:inline">Archives</span></button>
+             <button onClick={handleLogout} className="bg-red-500/10 hover:bg-red-500/20 text-red-400 p-2 rounded-lg border border-red-500/10"><LogOut className="w-5 h-5" /></button>
+             <button onClick={() => window.print()} className="flex items-center gap-2 bg-yellow-500 hover:bg-yellow-400 text-slate-900 px-4 py-2 rounded-lg font-bold shadow-lg"><Printer className="w-4 h-4" /><span>Imprimer</span></button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 py-8">
+        {/* Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8 print:hidden">
+            <StatCard title="Revenu Total" value={stats.total} icon={DollarSign} />
+            <StatCard title={`Part Médecin ${config.docPercent}%`} value={stats.docShare} sub={config.doctorName} icon={Activity} isGold />
+            <StatCard title="Part Infirmier" value={stats.nurseShare} sub={config.nurseName} icon={Users} />
+            <StatCard title="Net Clinique" value={stats.net} icon={Wallet} />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            {/* Sidebar */}
+            <div className="lg:col-span-4 space-y-6 print:hidden">
+                <div className="bg-slate-800/40 border border-slate-700/50 backdrop-blur-sm rounded-2xl p-6">
+                    <h2 className="text-lg font-bold text-white mb-4 flex gap-2"><UserPlus className="text-yellow-500 w-5 h-5"/> Nouveau Patient</h2>
+                    <form onSubmit={handleAddPatient} className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                            <input value={newPatient.firstName} onChange={e => setNewPatient({...newPatient, firstName: e.target.value})} placeholder="Prénom" className="bg-slate-900/80 border border-slate-600 rounded-lg p-3 text-white text-sm w-full" />
+                            <input value={newPatient.lastName} onChange={e => setNewPatient({...newPatient, lastName: e.target.value})} placeholder="Nom" className="bg-slate-900/80 border border-slate-600 rounded-lg p-3 text-white text-sm w-full" />
+                        </div>
+                        <input type="number" value={newPatient.amount} onChange={e => setNewPatient({...newPatient, amount: e.target.value})} placeholder="Montant (DA)" className="bg-slate-900/80 border border-slate-600 rounded-lg p-3 text-white text-sm w-full" />
+                        <button type="submit" className="w-full bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-bold py-3 rounded-lg shadow-lg">Enregistrer</button>
+                    </form>
+                </div>
+
+                <div className="bg-slate-800/40 border border-slate-700/50 backdrop-blur-sm rounded-2xl p-6">
+                    <h2 className="text-lg font-bold text-white mb-4 flex gap-2"><Settings className="text-slate-400 w-5 h-5"/> Configuration</h2>
+                    <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-2">
+                             <label className="cursor-pointer bg-slate-700/50 hover:bg-slate-700 p-2 rounded-lg border border-slate-600 border-dashed text-xs text-center"><Upload className="w-4 h-4 mx-auto mb-1 text-yellow-500"/>Logo<input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, 'customLogo')} /></label>
+                             <label className="cursor-pointer bg-slate-700/50 hover:bg-slate-700 p-2 rounded-lg border border-slate-600 border-dashed text-xs text-center"><ImageIcon className="w-4 h-4 mx-auto mb-1 text-blue-400"/>Fond<input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, 'customBg')} /></label>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 p-1 bg-slate-900/50 rounded-lg">
+                            <button onClick={() => {setConfig({...config, shift: 'Matin'}); saveToCloud(undefined, {...config, shift: 'Matin'})}} className={`text-xs py-2 rounded ${config.shift === 'Matin' ? 'bg-yellow-500 text-slate-900 font-bold' : 'text-slate-400'}`}>Matin</button>
+                            <button onClick={() => {setConfig({...config, shift: 'Soir'}); saveToCloud(undefined, {...config, shift: 'Soir'})}} className={`text-xs py-2 rounded ${config.shift === 'Soir' ? 'bg-yellow-500 text-slate-900 font-bold' : 'text-slate-400'}`}>Soir</button>
+                        </div>
+                        <div>
+                            <div className="flex justify-between text-xs text-slate-300 mb-1"><span>% Médecin</span><span className="text-yellow-500">{config.docPercent}%</span></div>
+                            <input type="range" value={config.docPercent} onChange={(e) => {setConfig({...config, docPercent: Number(e.target.value)}); saveToCloud(undefined, {...config, docPercent: Number(e.target.value)})}} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer" />
+                            <input value={config.doctorName} onChange={(e) => {setConfig({...config, doctorName: e.target.value}); saveToCloud(undefined, {...config, doctorName: e.target.value})}} placeholder="Nom du Médecin" className="mt-2 w-full bg-slate-900/80 border bord
